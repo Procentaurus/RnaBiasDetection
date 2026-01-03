@@ -76,6 +76,8 @@ if __name__ == '__main__':
     # Store results
     pc1 = pca.explained_variance_ratio_[0]
     pc2 = pca.explained_variance_ratio_[1]
+    samples["PC1"] = pcs[:, 0]
+    samples["PC2"] = pcs[:, 1]
 
     # Create a new column with age groups
     bins = [15, 25, 35, 45, 55, 65, 75, 100]

@@ -1,16 +1,31 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pathlib import Path
 
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+from .params import ROOT_DIR
 
 
-def plot_pca(samples, pc1, pc2, data_col, palette=None):
+def plot_correlation_heatmap(data, type):
+        # Plot and save Pearson correlation heatmap
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(
+        data,
+        annot=True,
+        fmt=".2f",
+        cmap="coolwarm",
+        center=0,
+        square=True
+    )
+    plt.title(f"{type} Correlation Heatmap")
+    plt.tight_layout()
+    plt.savefig(ROOT_DIR / "images" / "correlation" / f"{type}_heatmap.png")
+    plt.close()
+
+def plot_scatter(samples, pc1, pc2, data_col, palette=None):
     """   
     samples : pd.DataFrame
         DataFrame containing 'PC1', 'PC2' and the hue_col.
@@ -44,7 +59,20 @@ def plot_pca(samples, pc1, pc2, data_col, palette=None):
     plt.title(f"PCA of RNA-seq samples by {data_col}")
     plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.tight_layout()
-    plt.savefig(ROOT_DIR / "pca_images" / f"colored_by_{data_col}.png")
+    plt.savefig(ROOT_DIR / "images" / "pca" / f"colored_by_{data_col}.png")
+    plt.close()
+
+
+def plot_boxplot(samples):
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    sns.boxplot(x="AgeGroup", y="PC1", data=samples)
+    plt.title("PC1 by AgeGroup")
+    plt.subplot(1, 2, 2)
+    sns.boxplot(x="AgeGroup", y="PC2", data=samples)
+    plt.title("PC2 by AgeGroup")
+    plt.tight_layout()
+    plt.savefig(ROOT_DIR / "images" / "pca" / "boxplots_by_AgeGroup.png")
     plt.close()
 
 
@@ -73,7 +101,6 @@ if __name__ == '__main__':
     pca = PCA(n_components=2)
     pcs = pca.fit_transform(X_centered)
 
-    # Store results
     pc1 = pca.explained_variance_ratio_[0]
     pc2 = pca.explained_variance_ratio_[1]
     samples["PC1"] = pcs[:, 0]
@@ -87,23 +114,22 @@ if __name__ == '__main__':
                                  labels=labels,
                                  right=True)
 
-    plot_pca(samples, pc1, pc2, data_col="Location")
-    plot_pca(samples, pc1, pc2, data_col="Sex")
-    plot_pca(samples, pc1, pc2, data_col="AgeGroup", palette="coolwarm")
-    plot_pca(samples, pc1, pc2, data_col="lowLeuko")
-    plot_pca(samples, pc1, pc2, data_col="mediumLeuko")
-    plot_pca(samples, pc1, pc2, data_col="highLeuko")
+    plot_scatter(samples, pc1, pc2, data_col="Location")
+    plot_scatter(samples, pc1, pc2, data_col="Sex")
+    plot_scatter(samples, pc1, pc2, data_col="AgeGroup", palette="coolwarm")
+    plot_scatter(samples, pc1, pc2, data_col="lowLeuko")
+    plot_scatter(samples, pc1, pc2, data_col="mediumLeuko")
+    plot_scatter(samples, pc1, pc2, data_col="highLeuko")
+    plot_boxplot(samples)
 
-    outdir = ROOT_DIR/ "pca_images"
+    samples["Sex_code"] = samples["Sex"].astype("category").cat.codes
+    samples["Location_code"] = samples["Location"].astype("category").cat.codes
+    cols = ["Sex_code", "Location_code", "Age",
+            "PC1", "PC2", "lowLeuko", "mediumLeuko", "highLeuko"]
 
-    # Boxplots of PC1 and PC2 by AgeGroup
-    plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1)
-    sns.boxplot(x="AgeGroup", y="PC1", data=samples)
-    plt.title("PC1 by AgeGroup")
-    plt.subplot(1, 2, 2)
-    sns.boxplot(x="AgeGroup", y="PC2", data=samples)
-    plt.title("PC2 by AgeGroup")
-    plt.tight_layout()
-    plt.savefig(outdir / "boxplots_by_AgeGroup.png")
-    plt.close()
+    # Pearson correlation (linear) / Spearman correlation (rank-based)
+    pearson_corr = samples[cols].corr(method="pearson")
+    spearman_corr = samples[cols].corr(method="spearman")
+
+    plot_correlation_heatmap(pearson_corr, "Pearson")
+    plot_correlation_heatmap(pearson_corr, "Spearman")

@@ -5,41 +5,20 @@ import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
+from .params import (ROOT_DIR,
+                     TRESHHOLD)
 
-from .params import ROOT_DIR
 
+def filter_low_expression_genes(counts, min_fraction=0.5):
+    """
+    Keep genes expressed >= cutoff in at least min_fraction of samples.
+    """
+    expressed = (counts >= TRESHHOLD).sum(axis=1)
+    min_samples = int(min_fraction * counts.shape[1])
+    return counts.loc[expressed >= min_samples]
 
-def plot_correlation_heatmap(data, type):
-        # Plot and save Pearson correlation heatmap
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(
-        data,
-        annot=True,
-        fmt=".2f",
-        cmap="coolwarm",
-        center=0,
-        square=True
-    )
-    plt.title(f"{type} Correlation Heatmap")
-    plt.tight_layout()
-    plt.savefig(ROOT_DIR / "images" / "correlation" / f"{type}_heatmap.png")
-    plt.close()
 
 def plot_scatter(samples, pc1, pc2, data_col, palette=None):
-    """   
-    samples : pd.DataFrame
-        DataFrame containing 'PC1', 'PC2' and the hue_col.
-    pca : sklearn PCA object
-        Fitted PCA to extract explained variance for axis labels.
-    hue_col : str
-        Column name to color the points by.
-    outdir : Path
-        Directory to save the plot.
-    title : str, optional
-        Plot title. Defaults to "PCA by {hue_col}".
-    palette : str or dict, optional
-        Color palette for seaborn.
-    """
     plt.figure(figsize=(8, 6))
     sns.scatterplot(
         data=samples,
@@ -49,8 +28,6 @@ def plot_scatter(samples, pc1, pc2, data_col, palette=None):
         palette=palette,
         s=40
     )
-
-    # Add dotted lines at x=0 and y=0
     plt.axhline(0, color="gray", linestyle="--", linewidth=1)
     plt.axvline(0, color="gray", linestyle="--", linewidth=1)
 
@@ -68,68 +45,117 @@ def plot_boxplot(samples):
     plt.subplot(1, 2, 1)
     sns.boxplot(x="AgeGroup", y="PC1", data=samples)
     plt.title("PC1 by AgeGroup")
+
     plt.subplot(1, 2, 2)
     sns.boxplot(x="AgeGroup", y="PC2", data=samples)
     plt.title("PC2 by AgeGroup")
+
     plt.tight_layout()
     plt.savefig(ROOT_DIR / "images" / "pca" / "boxplots_by_AgeGroup.png")
     plt.close()
 
 
-if __name__ == '__main__':
+def plot_correlation_heatmap(data, label):
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(
+        data,
+        annot=True,
+        fmt=".2f",
+        cmap="coolwarm",
+        center=0,
+        square=True
+    )
+    plt.title(f"{label} Correlation Heatmap")
+    plt.tight_layout()
+    plt.savefig(ROOT_DIR / "images" / "correlation" / f"{label}_heatmap.png")
+    plt.close()
 
-    # Load data
-    samples = pd.read_csv(ROOT_DIR / "data/samples.csv",
-                          sep=";",
-                          decimal=",",
-                          index_col=0)
-    numeric_cols = ["Age", "lowLeuko", "mediumLeuko", "highLeuko"]
-    for col in numeric_cols:
+
+if __name__ == "__main__":
+
+    # Load metadata
+    samples = pd.read_csv(
+        ROOT_DIR / "data/samples.csv",
+        sep=";",
+        decimal=",",
+        index_col=0
+    )
+
+    for col in ["Age", "lowLeuko", "mediumLeuko", "highLeuko"]:
         samples[col] = pd.to_numeric(samples[col], errors="coerce")
 
-    counts = pd.read_csv(ROOT_DIR / "data/counts_normalized.csv",
-                         sep=";",
-                         decimal=",",
-                         index_col=0)
+    # Load expression matrix
+    counts = pd.read_csv(
+        ROOT_DIR / "data/counts_normalized.csv",
+        sep=";",
+        decimal=",",
+        index_col=0
+    )
 
-    # Match and order samples
+    # Match samples
     samples = samples[samples["id"].isin(counts.columns)]
-    X = counts[samples["id"]].T
+    counts = counts[samples["id"]]
 
-    # Center data and run PCA
+    # -------------------------------
+    # Low-expression filtering
+    # -------------------------------
+
+    counts_filt = filter_low_expression_genes(
+        counts,
+        min_fraction=0.5
+    )
+
+    print(f"Genes before filtering: {counts.shape[0]}")
+    print(f"Genes after filtering:  {counts_filt.shape[0]}")
+
+    # -------------------------------
+    # PCA
+    # -------------------------------
+
+    X = counts_filt.T
     X_centered = StandardScaler(with_std=False).fit_transform(X)
+
     pca = PCA(n_components=2)
     pcs = pca.fit_transform(X_centered)
 
-    pc1 = pca.explained_variance_ratio_[0]
-    pc2 = pca.explained_variance_ratio_[1]
     samples["PC1"] = pcs[:, 0]
     samples["PC2"] = pcs[:, 1]
 
-    # Create a new column with age groups
+    pc1_var, pc2_var = pca.explained_variance_ratio_
+
+    # Age groups
     bins = [15, 25, 35, 45, 55, 65, 75, 100]
     labels = ["15-25", "26-35", "36-45", "46-55", "56-65", "66-75", "75+"]
-    samples["AgeGroup"] = pd.cut(samples["Age"],
-                                 bins=bins,
-                                 labels=labels,
-                                 right=True)
+    samples["AgeGroup"] = pd.cut(samples["Age"], bins=bins, labels=labels)
 
-    plot_scatter(samples, pc1, pc2, data_col="Location")
-    plot_scatter(samples, pc1, pc2, data_col="Sex")
-    plot_scatter(samples, pc1, pc2, data_col="AgeGroup", palette="coolwarm")
-    plot_scatter(samples, pc1, pc2, data_col="lowLeuko")
-    plot_scatter(samples, pc1, pc2, data_col="mediumLeuko")
-    plot_scatter(samples, pc1, pc2, data_col="highLeuko")
+    # -------------------------------
+    # PCA plots
+    # -------------------------------
+
+    plot_scatter(samples, pc1_var, pc2_var, "Location")
+    plot_scatter(samples, pc1_var, pc2_var, "Sex")
+    plot_scatter(samples, pc1_var, pc2_var, "AgeGroup", palette="coolwarm")
+    plot_scatter(samples, pc1_var, pc2_var, "lowLeuko")
+    plot_scatter(samples, pc1_var, pc2_var, "mediumLeuko")
+    plot_scatter(samples, pc1_var, pc2_var, "highLeuko")
+
     plot_boxplot(samples)
+
+    # -------------------------------
+    # Correlation analysis
+    # -------------------------------
 
     samples["Sex_code"] = samples["Sex"].astype("category").cat.codes
     samples["Location_code"] = samples["Location"].astype("category").cat.codes
-    cols = ["Sex_code", "Location_code", "Age",
-            "PC1", "PC2", "lowLeuko", "mediumLeuko", "highLeuko"]
 
-    # Pearson correlation (linear) / Spearman correlation (rank-based)
-    pearson_corr = samples[cols].corr(method="pearson")
-    spearman_corr = samples[cols].corr(method="spearman")
+    cols = [
+        "PC1", "PC2", "Age",
+        "Sex_code", "Location_code",
+        "lowLeuko", "mediumLeuko", "highLeuko"
+    ]
 
-    plot_correlation_heatmap(pearson_corr, "Pearson")
-    plot_correlation_heatmap(pearson_corr, "Spearman")
+    pearson = samples[cols].corr(method="pearson")
+    spearman = samples[cols].corr(method="spearman")
+
+    plot_correlation_heatmap(pearson, "Pearson")
+    plot_correlation_heatmap(spearman, "Spearman")
